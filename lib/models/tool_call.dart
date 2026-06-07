@@ -29,6 +29,10 @@ class ToolCall {
   ToolStatus status;
   ToolResult? result;
 
+  /// Length of the assistant's text at the moment this tool was created — used to
+  /// render tools chronologically interleaved with the narration (Claude-style).
+  int textAnchor;
+
   final DateTime startedAt;
   DateTime? completedAt;
 
@@ -38,6 +42,7 @@ class ToolCall {
     required this.args,
     this.status = ToolStatus.pending,
     this.result,
+    this.textAnchor = 0,
     DateTime? startedAt,
     this.completedAt,
   }) : startedAt = startedAt ?? DateTime.now();
@@ -89,9 +94,37 @@ class ToolCall {
         return 'List background processes';
       case 'stop_process':
         return 'Stop process ${args['id']}';
+      // Claude Code (CLI) tool names — different casing + arg keys.
+      case 'Write':
+        return 'Write ${_short(args['file_path'])}';
+      case 'Edit':
+      case 'MultiEdit':
+      case 'NotebookEdit':
+        return 'Edit ${_short(args['file_path'] ?? args['notebook_path'])}';
+      case 'Read':
+        return 'Read ${_short(args['file_path'])}';
+      case 'Bash':
+        return '\$ ${_short(args['command'])}';
+      case 'Glob':
+        return 'Glob ${_short(args['pattern'])}';
+      case 'Grep':
+        return 'Grep "${_short(args['pattern'])}"';
+      case 'TodoWrite':
+        return 'Update TODO list';
+      case 'WebFetch':
+        return 'Fetch ${_short(args['url'])}';
+      case 'WebSearch':
+        return 'Search "${_short(args['query'])}"';
+      case 'Task':
+        return 'Agent: ${_short(args['description'] ?? 'task')}';
       default:
         return name;
     }
+  }
+
+  static String _short(Object? v) {
+    final s = (v ?? '').toString().replaceAll('\n', ' ');
+    return s.length > 80 ? '${s.substring(0, 80)}…' : s;
   }
 
   Map<String, dynamic> toJson() => {
@@ -100,6 +133,7 @@ class ToolCall {
     'args': args,
     'status': status.name,
     'result': result?.toJson(),
+    'textAnchor': textAnchor,
     'startedAt': startedAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
   };
@@ -116,6 +150,7 @@ class ToolCall {
       result: json['result'] != null
           ? ToolResult.fromJson(Map<String, dynamic>.from(json['result']))
           : null,
+      textAnchor: (json['textAnchor'] as num?)?.toInt() ?? 0,
       startedAt: json['startedAt'] != null
           ? DateTime.parse(json['startedAt'])
           : DateTime.now(),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/app_config.dart';
 import '../models/chat_message.dart';
 import '../models/tool_call.dart';
 import '../services/agent_service.dart';
@@ -34,15 +35,16 @@ class PendingApproval {
 class ChatState {
   final List<ChatSession> sessions;
   final String? activeId;
-  final bool isRunning;
-  final PendingApproval? pendingApproval;
+  // Per-session so multiple sessions (each with its own model) can run at once.
+  final Set<String> runningSessionIds;
+  final Map<String, PendingApproval> pendingApprovals;
   final int tick;
 
   const ChatState({
     this.sessions = const [],
     this.activeId,
-    this.isRunning = false,
-    this.pendingApproval,
+    this.runningSessionIds = const {},
+    this.pendingApprovals = const {},
     this.tick = 0,
   });
 
@@ -55,19 +57,23 @@ class ChatState {
 
   List<ChatMessage> get messages => active?.messages ?? const [];
 
+  // Convenience views for the *active* session (composer + permission banner).
+  bool get isRunning => activeId != null && runningSessionIds.contains(activeId);
+  bool isSessionRunning(String id) => runningSessionIds.contains(id);
+  PendingApproval? get pendingApproval => activeId == null ? null : pendingApprovals[activeId];
+
   ChatState copyWith({
     List<ChatSession>? sessions,
     String? activeId,
-    bool? isRunning,
-    PendingApproval? pendingApproval,
-    bool clearPending = false,
+    Set<String>? runningSessionIds,
+    Map<String, PendingApproval>? pendingApprovals,
     int? tick,
   }) {
     return ChatState(
       sessions: sessions ?? this.sessions,
       activeId: activeId ?? this.activeId,
-      isRunning: isRunning ?? this.isRunning,
-      pendingApproval: clearPending ? null : (pendingApproval ?? this.pendingApproval),
+      runningSessionIds: runningSessionIds ?? this.runningSessionIds,
+      pendingApprovals: pendingApprovals ?? this.pendingApprovals,
       tick: tick ?? this.tick,
     );
   }
@@ -80,7 +86,7 @@ final chatControllerProvider = StateNotifierProvider<ChatController, ChatState>(
 class ChatController extends StateNotifier<ChatState> {
   final Ref ref;
   final _store = ChatStore();
-  bool _cancel = false;
+  final Set<String> _cancelled = {}; // session ids the user asked to stop
   int _idc = 0;
 
   ChatController(this.ref) : super(const ChatState());
@@ -144,24 +150,36 @@ class ChatController extends StateNotifier<ChatState> {
     _store.save(state.sessions);
   }
 
-  void stop() {
-    _cancel = true;
-    final pending = state.pendingApproval;
-    if (pending != null && !pending.completer.isCompleted) {
-      pending.completer.complete(false);
-    }
-    state = state.copyWith(isRunning: false, clearPending: true);
+  void stop([String? sessionId]) {
+    final sid = sessionId ?? state.activeId;
+    if (sid == null) return;
+    _cancelled.add(sid);
+    final pending = state.pendingApprovals[sid];
+    if (pending != null && !pending.completer.isCompleted) pending.completer.complete(false);
+    state = state.copyWith(
+      runningSessionIds: {...state.runningSessionIds}..remove(sid),
+      pendingApprovals: {...state.pendingApprovals}..remove(sid),
+    );
     _bump();
   }
 
   void resolveApproval(bool approved, {bool always = false}) {
-    final pending = state.pendingApproval;
+    final sid = state.activeId;
+    if (sid == null) return;
+    final pending = state.pendingApprovals[sid];
     if (pending == null) return;
+    // Folder-access grant: add the requested folder to the allowed list.
+    if (approved && pending.toolCall.name == '__grant_folder') {
+      final folder = pending.toolCall.args['folder'] as String?;
+      if (folder != null && folder.isNotEmpty) {
+        ref.read(configControllerProvider.notifier).addFolder(folder);
+      }
+    }
     if (always && approved) {
       ref.read(configControllerProvider.notifier).allowAlways(pending.toolCall.ruleSignature);
     }
     if (!pending.completer.isCompleted) pending.completer.complete(approved);
-    state = state.copyWith(clearPending: true);
+    state = state.copyWith(pendingApprovals: {...state.pendingApprovals}..remove(sid));
     _bump();
   }
 
@@ -170,10 +188,15 @@ class ChatController extends StateNotifier<ChatState> {
   }
 
   Future<void> send(String text, {List<String> attachments = const []}) async {
-    if ((text.trim().isEmpty && attachments.isEmpty) || state.isRunning) return;
-    _cancel = false;
+    if (text.trim().isEmpty && attachments.isEmpty) return;
 
     final session = _ensureSession(text);
+    final sid = session.id;
+    if (state.isSessionRunning(sid)) return; // this session is busy; other sessions may still run
+    _cancelled.remove(sid);
+
+    final config = ref.read(configControllerProvider);
+
     if (session.messages.isEmpty && session.title == 'New session') {
       session.title = _titleFrom(text.isEmpty ? 'Image request' : text);
     }
@@ -187,18 +210,19 @@ class ChatController extends StateNotifier<ChatState> {
     final assistant = ChatMessage(
       id: _id(),
       role: MessageRole.model,
+      model: config.activeModel,
       streaming: true,
       startedAt: DateTime.now(),
     );
 
     final prior = List<ChatMessage>.from(session.messages);
+    final isFirstTurn = prior.isEmpty;
     session.messages.add(userMsg);
     session.messages.add(assistant);
-    state = state.copyWith(isRunning: true);
+    state = state.copyWith(runningSessionIds: {...state.runningSessionIds, sid});
     _bump();
 
     final agent = ref.read(agentServiceProvider);
-    final config = ref.read(configControllerProvider);
 
     try {
       await agent.runTurn(
@@ -208,26 +232,56 @@ class ChatController extends StateNotifier<ChatState> {
         assistant: assistant,
         attachments: List<String>.from(attachments),
         onUpdate: _bump,
-        isCancelled: () => _cancel,
+        isCancelled: () => _cancelled.contains(sid),
         requestApproval: (tc) {
           final completer = Completer<bool>();
-          state = state.copyWith(pendingApproval: PendingApproval(tc, completer));
+          state = state.copyWith(pendingApprovals: {...state.pendingApprovals, sid: PendingApproval(tc, completer)});
           return completer.future;
         },
       );
+      // Give the session a smart, short, AI-generated title after the first turn.
+      if (isFirstTurn && !_cancelled.contains(sid)) {
+        unawaited(_maybeGenerateTitle(session, config, text.trim()));
+      }
     } catch (e) {
       assistant.error = _friendlyError(e);
       assistant.thinking = null;
     } finally {
       assistant.streaming = false;
       assistant.completedAt = DateTime.now();
-      state = state.copyWith(isRunning: false, clearPending: true);
+      state = state.copyWith(
+        runningSessionIds: {...state.runningSessionIds}..remove(sid),
+        pendingApprovals: {...state.pendingApprovals}..remove(sid),
+      );
       _bump();
     }
   }
 
+  Future<void> _maybeGenerateTitle(ChatSession session, AppConfig config, String firstUserMsg) async {
+    try {
+      final title = await ref.read(agentServiceProvider).quickTitle(config, firstUserMsg);
+      if (title != null && title.trim().isNotEmpty) {
+        session.title = title.trim();
+        _bump();
+      }
+    } catch (_) {/* keep the fallback title */}
+  }
+
   String _friendlyError(Object e) {
     final s = e.toString();
+    final low = s.toLowerCase();
+    if (low.contains('resource exhausted') || low.contains('resource_exhausted')) {
+      return '⏳ Vertex kvotasi tugadi (429 — Resource exhausted). Gemini 3.1 Pro PREVIEW model kvotasi past. '
+          'Biroz kuting, yoki barqaror "Gemini 2.5 Pro (Vertex)"ga o\'ting (kvotasi yuqori).';
+    }
+    if (low.contains('usage limit') || low.contains('429') || (low.contains('upgrade') && low.contains('ollama'))) {
+      return '⏳ Ollama Cloud bepul limiti tugadi (429). Biroz kutib qayta urinib ko\'ring, '
+          'yoki ollama.com/upgrade orqali limitni oshiring. Ayni damda Gemini 2.5 Pro (Vertex) '
+          'yoki gemma4 ga o\'tib ishlashda davom etishingiz mumkin.';
+    }
+    if (s.contains('requires a subscription')) {
+      return 'Bu model Ollama obunasini talab qiladi (ollama.com/upgrade). Boshqa modelni tanlang.';
+    }
     if (s.contains('Failed to fetch') || s.contains('ClientException') || s.contains('SocketException')) {
       return 'Network error reaching AI models. Check your connection. ($s)';
     }

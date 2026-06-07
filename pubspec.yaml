@@ -31,6 +31,9 @@ dependencies:
   google_generative_ai: ^0.4.7
   url_launcher: ^6.3.0
   pasteboard: ^0.5.0
+  # Embedded interactive terminal: run `claude` / `ollama launch …` inside the app.
+  xterm: ^4.0.0
+  flutter_pty: ^0.4.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

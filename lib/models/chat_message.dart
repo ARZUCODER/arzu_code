@@ -10,6 +10,9 @@ class ChatMessage {
 
   final List<String> attachments;
 
+  /// Which AI model produced this message (e.g. gemini-2.5-pro, gemma4:31b-cloud).
+  String? model;
+
   bool streaming;
   String? error;
   String? thinking;
@@ -18,6 +21,7 @@ class ChatMessage {
   int outputTokens;
   int thoughtTokens;
   int totalTokens;
+  int cachedTokens; // prompt tokens served from Vertex cache (billed cheaper)
 
   final DateTime startedAt;
   DateTime? completedAt;
@@ -28,6 +32,7 @@ class ChatMessage {
     this.text = '',
     List<ToolCall>? toolCalls,
     List<String>? attachments,
+    this.model,
     this.streaming = false,
     this.error,
     this.thinking,
@@ -35,6 +40,7 @@ class ChatMessage {
     this.outputTokens = 0,
     this.thoughtTokens = 0,
     this.totalTokens = 0,
+    this.cachedTokens = 0,
     DateTime? startedAt,
     this.completedAt,
   })  : toolCalls = toolCalls ?? [],
@@ -49,6 +55,7 @@ class ChatMessage {
     'text': text,
     'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
     'attachments': attachments,
+    'model': model,
     'streaming': streaming,
     'error': error,
     'thinking': thinking,
@@ -56,6 +63,7 @@ class ChatMessage {
     'outputTokens': outputTokens,
     'thoughtTokens': thoughtTokens,
     'totalTokens': totalTokens,
+    'cachedTokens': cachedTokens,
     'startedAt': startedAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
   };
@@ -72,6 +80,7 @@ class ChatMessage {
           ?.map((e) => ToolCall.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       attachments: (json['attachments'] as List?)?.cast<String>(),
+      model: json['model'] as String?,
       streaming: json['streaming'] as bool? ?? false,
       error: json['error'] as String?,
       thinking: json['thinking'] as String?,
@@ -79,6 +88,7 @@ class ChatMessage {
       outputTokens: json['outputTokens'] as int? ?? 0,
       thoughtTokens: json['thoughtTokens'] as int? ?? 0,
       totalTokens: json['totalTokens'] as int? ?? 0,
+      cachedTokens: json['cachedTokens'] as int? ?? 0,
       startedAt: json['startedAt'] != null
           ? DateTime.parse(json['startedAt'])
           : DateTime.now(),
@@ -102,10 +112,19 @@ class ChatSession {
     List<ChatMessage>? messages,
   }) : messages = messages ?? [];
 
+  /// The model used by the most recent assistant message (for the sidebar badge).
+  String? get lastModel {
+    for (final m in messages.reversed) {
+      if (!m.isUser && (m.model ?? '').isNotEmpty) return m.model;
+    }
+    return null;
+  }
+
   int get totalInputTokens => messages.fold(0, (sum, m) => sum + m.inputTokens);
   int get totalOutputTokens => messages.fold(0, (sum, m) => sum + m.outputTokens);
   int get totalThoughtTokens => messages.fold(0, (sum, m) => sum + m.thoughtTokens);
   int get totalTokens => messages.fold(0, (sum, m) => sum + m.totalTokens);
+  int get totalCachedTokens => messages.fold(0, (sum, m) => sum + m.cachedTokens);
 
   Map<String, dynamic> toJson() => {
     'id': id,

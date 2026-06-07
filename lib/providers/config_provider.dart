@@ -50,6 +50,10 @@ class ConfigController extends StateNotifier<AppConfig> {
 
   void setLocalModel(String model) => _apply(state.copyWith(localModel: model));
 
+  void setArzuCloudUrl(String url) => _apply(state.copyWith(arzuCloudUrl: url.trim()));
+
+  void setArzuCloudKey(String key) => _apply(state.copyWith(arzuCloudKey: key.trim()));
+
   void setImageModel(String model) => _apply(state.copyWith(imageModel: model));
 
   void setServiceAccountPath(String path) => _apply(state.copyWith(serviceAccountPath: path));

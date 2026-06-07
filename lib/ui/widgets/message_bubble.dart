@@ -13,7 +13,6 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/chat_message.dart';
-import '../../models/tool_call.dart';
 import '../../theme/app_theme.dart';
 import 'tool_call_card.dart';
 
@@ -116,8 +115,7 @@ class _AssistantBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (message.text.trim().isNotEmpty) _md(context, message.text),
-                if (message.toolCalls.isNotEmpty) _ToolCallsGroup(calls: message.toolCalls, running: message.streaming),
+                ..._interleaved(context),
                 if (message.thinking != null) _Thinking(text: message.thinking!),
                 if (message.error != null) _ErrorBox(text: message.error!),
                 if (message.text.trim().isEmpty && message.toolCalls.isEmpty && message.thinking == null && message.error == null && message.streaming)
@@ -130,6 +128,27 @@ class _AssistantBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // Renders narration text and tool cards in chronological order (Claude-style),
+  // using each tool's textAnchor (text length when the tool fired).
+  List<Widget> _interleaved(BuildContext context) {
+    final text = message.text;
+    final tools = [...message.toolCalls]..sort((a, b) => a.textAnchor.compareTo(b.textAnchor));
+    final out = <Widget>[];
+    var pos = 0;
+    for (final tc in tools) {
+      final anchor = tc.textAnchor.clamp(0, text.length);
+      if (anchor > pos) {
+        final seg = text.substring(pos, anchor).trim();
+        if (seg.isNotEmpty) out.add(_md(context, seg));
+        pos = anchor;
+      }
+      out.add(ToolCallCard(call: tc));
+    }
+    final tail = text.substring(pos.clamp(0, text.length)).trim();
+    if (tail.isNotEmpty) out.add(_md(context, tail));
+    return out;
   }
 
   Widget _md(BuildContext context, String text) {
@@ -157,67 +176,6 @@ class _AssistantBubble extends StatelessWidget {
           blockquoteDecoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(6), border: const Border(left: BorderSide(color: AppColors.accent, width: 3))),
           a: const TextStyle(color: AppColors.blue, decoration: TextDecoration.underline),
         ),
-      ),
-    );
-  }
-}
-
-class _ToolCallsGroup extends StatefulWidget {
-  final List<ToolCall> calls;
-  final bool running;
-  const _ToolCallsGroup({required this.calls, required this.running});
-
-  @override
-  State<_ToolCallsGroup> createState() => _ToolCallsGroupState();
-}
-
-class _ToolCallsGroupState extends State<_ToolCallsGroup> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasError = widget.calls.any((c) => c.status == ToolStatus.error);
-
-    return Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    widget.running ? LucideIcons.loader : (hasError ? LucideIcons.triangle_alert : LucideIcons.circle_check),
-                    size: 15,
-                    color: widget.running ? AppColors.blue : (hasError ? AppColors.red : AppColors.green),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '${widget.calls.length} operations ${widget.running ? 'running...' : 'completed'}',
-                      style: const TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                  Icon(_expanded ? LucideIcons.chevron_up : LucideIcons.chevron_down, size: 16, color: AppColors.textDim),
-                ],
-              ),
-            ),
-          ),
-          if (_expanded)
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderSubtle))),
-              child: Column(children: widget.calls.map((c) => ToolCallCard(call: c)).toList()),
-            ),
-        ],
       ),
     );
   }

@@ -34,6 +34,15 @@ class _ToolCallCardState extends State<ToolCallCard> {
     'read_process_output' => LucideIcons.scroll_text,
     'list_processes' => LucideIcons.list,
     'stop_process' => LucideIcons.square,
+    // Claude Code (CLI) tool names.
+    'Write' => LucideIcons.file_plus,
+    'Edit' || 'MultiEdit' || 'NotebookEdit' => LucideIcons.file_pen,
+    'Read' => LucideIcons.file_text,
+    'Bash' => LucideIcons.terminal,
+    'Glob' || 'Grep' => LucideIcons.search,
+    'TodoWrite' => LucideIcons.list_checks,
+    'WebFetch' || 'WebSearch' => LucideIcons.globe,
+    'Task' => LucideIcons.bot,
     _ => LucideIcons.wrench,
   };
 
@@ -110,7 +119,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
               ),
             ),
           ),
-          if (call.name == 'write_file' && !_expanded) _ContentPreview(content: call.args['content'] as String? ?? ''),
+          if ((call.name == 'write_file' || call.name == 'Write') && !_expanded) _ContentPreview(content: call.args['content'] as String? ?? ''),
+          if (call.name == 'TodoWrite') _TodoList(todos: call.args['todos']),
           if (_expanded && hasOutput)
             Container(
               width: double.infinity,
@@ -130,6 +140,62 @@ class _ToolCallCardState extends State<ToolCallCard> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// Renders Claude's TodoWrite list as a checklist (like Claude Code's plan view).
+class _TodoList extends StatelessWidget {
+  final dynamic todos;
+  const _TodoList({required this.todos});
+
+  @override
+  Widget build(BuildContext context) {
+    if (todos is! List) return const SizedBox.shrink();
+    final items = todos as List;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final t in items)
+            if (t is Map)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      switch (t['status']) {
+                        'completed' => LucideIcons.circle_check,
+                        'in_progress' => LucideIcons.loader,
+                        _ => LucideIcons.circle,
+                      },
+                      size: 13,
+                      color: switch (t['status']) {
+                        'completed' => AppColors.green,
+                        'in_progress' => AppColors.blue,
+                        _ => AppColors.textFaint,
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        (t['content'] ?? t['activeForm'] ?? '').toString(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: t['status'] == 'completed' ? AppColors.textFaint : AppColors.text,
+                          decoration: t['status'] == 'completed' ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
         ],
       ),
     );

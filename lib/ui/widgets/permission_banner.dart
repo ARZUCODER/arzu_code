@@ -15,6 +15,8 @@ class PermissionBanner extends ConsumerWidget {
     final controller = ref.read(chatControllerProvider.notifier);
     final tc = pending.toolCall;
     final isCommand = tc.name == 'run_command';
+    final isGrant = tc.name == '__grant_folder';
+    final folder = tc.args['folder'] as String? ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -29,30 +31,39 @@ class PermissionBanner extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(LucideIcons.shield_alert, size: 16, color: AppColors.accent),
+              Icon(isGrant ? LucideIcons.folder_lock : LucideIcons.shield_alert, size: 16, color: AppColors.accent),
               const SizedBox(width: 8),
               Text(
-                isCommand ? 'Run this command?' : 'Allow this action?',
+                isGrant ? 'Bu papkaga ruxsat berilsinmi?' : (isCommand ? 'Run this command?' : 'Allow this action?'),
                 style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.text),
               ),
             ],
           ),
+          if (isGrant) ...[
+            const SizedBox(height: 4),
+            const Text('Arzu shu papkada ishlamoqchi (allowed folders\'ga qo\'shiladi):', style: TextStyle(fontSize: 12, color: AppColors.textDim)),
+          ],
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(color: const Color(0xFF161513), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
-            child: SelectableText(tc.summary, style: AppTheme.mono(size: 12.5, color: AppColors.text, height: 1.4)),
+            child: SelectableText(isGrant ? folder : tc.summary, style: AppTheme.mono(size: 12.5, color: AppColors.text, height: 1.4)),
           ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              _btn(label: 'Allow', icon: LucideIcons.check, filled: true, onTap: () => controller.resolveApproval(true)),
-              _btn(label: 'Always allow ${_ruleLabel(tc)}', icon: LucideIcons.check_check, onTap: () => controller.resolveApproval(true, always: true)),
-              _btn(label: 'Deny', icon: LucideIcons.x, danger: true, onTap: () => controller.resolveApproval(false)),
-            ],
+            children: isGrant
+                ? [
+                    _btn(label: 'Ruxsat berish', icon: LucideIcons.check, filled: true, onTap: () => controller.resolveApproval(true)),
+                    _btn(label: 'Yo\'q', icon: LucideIcons.x, danger: true, onTap: () => controller.resolveApproval(false)),
+                  ]
+                : [
+                    _btn(label: 'Allow', icon: LucideIcons.check, filled: true, onTap: () => controller.resolveApproval(true)),
+                    _btn(label: 'Always allow ${_ruleLabel(tc)}', icon: LucideIcons.check_check, onTap: () => controller.resolveApproval(true, always: true)),
+                    _btn(label: 'Deny', icon: LucideIcons.x, danger: true, onTap: () => controller.resolveApproval(false)),
+                  ],
           ),
         ],
       ),

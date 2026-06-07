@@ -12,6 +12,8 @@ import 'widgets/selectors.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/terminal_panel.dart';
 import 'widgets/folder_to_txt_dialog.dart';
+import 'widgets/claude_cli_dialog.dart';
+import '../providers/config_provider.dart';
 import '../models/chat_message.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -142,16 +144,29 @@ class _TopBar extends ConsumerWidget {
                   const SizedBox(width: 8),
                   _terminalButton(),
                   const SizedBox(width: 4),
+                  _claudeCliButton(context, ref),
+                  const SizedBox(width: 4),
                   _iconButton(LucideIcons.folder_input, onOpenFolderToTxt, tooltip: 'Folder to TXT'),
                   const SizedBox(width: 4),
                   _iconButton(
                     LucideIcons.download,
-                        () {
-                      if (chat.active != null) {
-                        ExportService.exportSessionAsMarkdown(chat.active!);
-                      }
+                        () async {
+                      if (chat.active == null) return;
+                      final path = await ExportService.exportSessionAsMarkdown(chat.active!);
+                      if (!context.mounted) return;
+                      final msg = path != null
+                          ? '✅ Saqlandi: arzu test md/${path.split('/').last}'
+                          : '❌ Eksport amalga oshmadi';
+                      ScaffoldMessenger.of(context)
+                        ..clearSnackBars()
+                        ..showSnackBar(SnackBar(
+                          content: Text(msg),
+                          duration: const Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: AppColors.surfaceHigh,
+                        ));
                     },
-                    tooltip: 'Export as Markdown',
+                    tooltip: 'Export to ~/Desktop/arzu test md/',
                   ),
                   const SizedBox(width: 4),
                   _iconButton(LucideIcons.settings, onOpenSettings, tooltip: 'Settings'),
@@ -160,6 +175,42 @@ class _TopBar extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Embedded interactive terminal (run `claude` / `ollama launch …` in-app).
+  Widget _claudeCliButton(BuildContext context, WidgetRef ref) {
+    final folders = ref.watch(configControllerProvider).allowedFolders;
+    final cwd = folders.isNotEmpty ? folders.first : null;
+    return PopupMenuButton<String>(
+      tooltip: 'CLI terminal (Claude / shell)',
+      color: AppColors.surfaceHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: AppColors.border)),
+      onSelected: (v) {
+        switch (v) {
+          case 'shell':
+            showClaudeCli(context, cwd: cwd, title: 'Terminal');
+            break;
+          case 'claude_qwen':
+            showClaudeCli(context, cwd: cwd, title: 'Claude · Qwen3 Coder',
+                command: 'ollama launch claude --model qwen3-coder:480b-cloud');
+            break;
+          case 'claude_gemma':
+            showClaudeCli(context, cwd: cwd, title: 'Claude · Gemma',
+                command: 'ollama launch claude --model gemma4:31b-cloud');
+            break;
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'claude_qwen', child: Row(children: [Icon(LucideIcons.bot, size: 15, color: AppColors.accent), SizedBox(width: 8), Text('Claude + Qwen3 Coder', style: TextStyle(fontSize: 13, color: AppColors.text))])),
+        PopupMenuItem(value: 'claude_gemma', child: Row(children: [Icon(LucideIcons.bot, size: 15, color: AppColors.purple), SizedBox(width: 8), Text('Claude + Gemma', style: TextStyle(fontSize: 13, color: AppColors.text))])),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'shell', child: Row(children: [Icon(LucideIcons.square_terminal, size: 15, color: AppColors.textDim), SizedBox(width: 8), Text('New terminal (shell)', style: TextStyle(fontSize: 13, color: AppColors.text))])),
+      ],
+      child: const Padding(
+        padding: EdgeInsets.all(7),
+        child: Icon(LucideIcons.square_terminal, size: 18, color: AppColors.textDim),
       ),
     );
   }
@@ -238,21 +289,24 @@ class _TokenBadge extends ConsumerWidget {
     final msgOut = lastMsg?.outputTokens ?? 0;
     final msgTh = lastMsg?.thoughtTokens ?? 0;
     final msgTot = lastMsg?.totalTokens ?? 0;
+    final msgCached = lastMsg?.cachedTokens ?? 0;
+    final sessCached = session.totalCachedTokens;
 
     final tooltip = '''
 ⚡ LAST REQUEST
 Total: $msgTot
-Input: $msgIn
+Input: $msgIn${msgCached > 0 ? '  (♻️ $msgCached cached — billed cheaper)' : ''}
 Output: $msgOut
 Thinking: $msgTh
 
 📦 SESSION TOTAL
 Total: $total
-Input: ${session.totalInputTokens}
+Input: ${session.totalInputTokens}${sessCached > 0 ? '  (♻️ $sessCached cached)' : ''}
 Output: ${session.totalOutputTokens}
 Thinking: ${session.totalThoughtTokens}
 
-* Note: ~1.5k input tokens are System Rules & Tools sent every time.
+* ~1.5k input/req = System Rules & Tools.
+${sessCached > 0 ? '* ♻️ cached tokens are reused by Vertex at a big discount — real cost < the number shown.' : '* Vertex auto-caches the stable prompt prefix to cut cost.'}
 '''.trim();
 
     return Tooltip(

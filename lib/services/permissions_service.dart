@@ -26,9 +26,13 @@ class PermissionsService {
         'Add its folder in Permissions first.';
   }
 
+  // Always blocked regardless of user config — whole-disk scans are slow, dump
+  // huge output, and trigger macOS Music/iCloud privacy prompts.
+  static const _alwaysBlocked = ['find / ', 'find ~ ', 'find / -', 'mdfind '];
+
   String? blockedCommandPattern(String command) {
     final lower = command.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
-    for (final pat in config.blockedCommandPatterns) {
+    for (final pat in [..._alwaysBlocked, ...config.blockedCommandPatterns]) {
       if (lower.contains(pat.toLowerCase())) return pat;
     }
     return null;

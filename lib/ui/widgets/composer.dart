@@ -45,6 +45,17 @@ class _ComposerState extends ConsumerState<Composer> {
     super.dispose();
   }
 
+  void _toast(String msg) {
+    final m = ScaffoldMessenger.maybeOf(context);
+    m?.clearSnackBars();
+    m?.showSnackBar(SnackBar(
+      content: Text(msg),
+      duration: const Duration(milliseconds: 1400),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.surfaceHigh,
+    ));
+  }
+
   void _addPaths(Iterable<String> paths) {
     final images = paths.where((path) => _imageExtensions.contains(p.extension(path).toLowerCase()));
     if (images.isEmpty) return;
@@ -66,16 +77,58 @@ class _ComposerState extends ConsumerState<Composer> {
     }
   }
 
-  Future<void> _pasteImage() async {
-    final imageBytes = await Pasteboard.image;
-    if (imageBytes != null) {
+  void _insertText(String text) {
+    final sel = _controller.selection;
+    final base = _controller.text;
+    if (sel.isValid && sel.start >= 0) {
+      final newText = base.replaceRange(sel.start, sel.end, text);
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: sel.start + text.length),
+      );
+    } else {
+      _controller.text = base + text;
+    }
+  }
+
+  /// Unified paste: attach a clipboard image if present; otherwise (when invoked
+  /// from the paste shortcut) fall back to normal text paste so typing isn't broken.
+  Future<void> _handlePaste({bool allowTextFallback = false}) async {
+    Uint8List? imageBytes;
+    try {
+      imageBytes = await Pasteboard.image;
+    } catch (_) {}
+
+    if (imageBytes != null && imageBytes.isNotEmpty) {
       final tempDir = await getTemporaryDirectory();
-      final path = p.join(tempDir.path, '${DateTime.now().millisecondsSinceEpoch}.png');
-      final file = File(path);
-      await file.writeAsBytes(imageBytes);
+      final path = p.join(tempDir.path, 'paste_${DateTime.now().millisecondsSinceEpoch}.png');
+      await File(path).writeAsBytes(imageBytes);
+      if (!mounted) return;
       setState(() {
         if (!_attachments.contains(path)) _attachments.add(path);
       });
+      _toast('📎 Rasm biriktirildi');
+      return;
+    }
+
+    // Image FILE(s) copied from Finder / a chat app.
+    try {
+      final files = await Pasteboard.files();
+      final imgs = files.where((f) => _imageExtensions.contains(p.extension(f).toLowerCase())).toList();
+      if (imgs.isNotEmpty) {
+        _addPaths(imgs);
+        _toast('📎 Rasm biriktirildi');
+        return;
+      }
+    } catch (_) {}
+
+    // No image on the clipboard.
+    if (allowTextFallback) {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text;
+      if (text != null && text.isNotEmpty) _insertText(text);
+    } else {
+      _toast('Clipboard\'da rasm topilmadi');
     }
   }
 
@@ -142,15 +195,19 @@ class _ComposerState extends ConsumerState<Composer> {
                     ),
                   ),
                 ),
-              RawKeyboardListener(
-                focusNode: FocusNode(),
-                onKey: (event) {
-                  if (event.isMetaPressed && event.logicalKey == LogicalKeyboardKey.keyV) {
-                    _pasteImage();
-                  }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+                // Override the paste action so Cmd+V (and the Edit ▸ Paste menu)
+                // attach a clipboard image; text paste still works via the fallback.
+                child: Actions(
+                  actions: <Type, Action<Intent>>{
+                    PasteTextIntent: CallbackAction<PasteTextIntent>(
+                      onInvoke: (_) {
+                        _handlePaste(allowTextFallback: true);
+                        return null;
+                      },
+                    ),
+                  },
                   child: Focus(
                     onKeyEvent: (node, event) {
                       if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.enter && !HardwareKeyboard.instance.isShiftPressed) {
@@ -182,7 +239,7 @@ class _ComposerState extends ConsumerState<Composer> {
                 child: Row(
                   children: [
                     _IconAction(icon: LucideIcons.image_plus, tooltip: 'Attach image from files', onTap: _pickImages),
-                    _IconAction(icon: LucideIcons.clipboard, tooltip: 'Paste image from clipboard', onTap: _pasteImage),
+                    _IconAction(icon: LucideIcons.clipboard, tooltip: 'Paste image from clipboard', onTap: () => _handlePaste()),
                     const SizedBox(width: 6),
                     const Icon(LucideIcons.corner_down_left, size: 12, color: AppColors.textFaint),
                     const SizedBox(width: 5),

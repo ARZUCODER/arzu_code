@@ -75,6 +75,8 @@ class _SidebarState extends ConsumerState<Sidebar> {
                   final s = chat.sessions[i];
                   return _SessionTile(
                     title: s.title,
+                    model: s.lastModel,
+                    running: chat.isSessionRunning(s.id),
                     selected: s.id == chat.activeId,
                     onTap: () => controller.selectSession(s.id),
                     onDelete: () => controller.deleteSession(s.id),
@@ -163,10 +165,12 @@ class _NewSessionButton extends StatelessWidget {
 
 class _SessionTile extends StatefulWidget {
   final String title;
+  final String? model;
+  final bool running;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDelete;
-  const _SessionTile({required this.title, required this.selected, required this.onTap, required this.onDelete});
+  const _SessionTile({required this.title, this.model, this.running = false, required this.selected, required this.onTap, required this.onDelete});
 
   @override
   State<_SessionTile> createState() => _SessionTileState();
@@ -177,6 +181,7 @@ class _SessionTileState extends State<_SessionTile> {
 
   @override
   Widget build(BuildContext context) {
+    final model = widget.model;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -184,20 +189,65 @@ class _SessionTileState extends State<_SessionTile> {
         onTap: widget.onTap,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 1),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(color: widget.selected ? AppColors.surfaceHigh : (_hover ? AppColors.surface : Colors.transparent), borderRadius: BorderRadius.circular(8)),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(LucideIcons.message_square, size: 14, color: widget.selected ? AppColors.accent : AppColors.textFaint),
-              const SizedBox(width: 9),
-              Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: widget.selected ? AppColors.text : AppColors.textDim))),
-              if (_hover || widget.selected) GestureDetector(onTap: widget.onDelete, child: const Icon(LucideIcons.trash_2, size: 13, color: AppColors.textFaint)),
+              Row(
+                children: [
+                  if (widget.running)
+                    const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 1.6, color: AppColors.accent))
+                  else
+                    Icon(LucideIcons.message_square, size: 14, color: widget.selected ? AppColors.accent : AppColors.textFaint),
+                  const SizedBox(width: 9),
+                  Expanded(child: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: widget.selected ? AppColors.text : AppColors.textDim))),
+                  if (_hover || widget.selected) GestureDetector(onTap: widget.onDelete, child: const Icon(LucideIcons.trash_2, size: 13, color: AppColors.textFaint)),
+                ],
+              ),
+              if (model != null) ...[
+                const SizedBox(height: 3),
+                Padding(
+                  padding: const EdgeInsets.only(left: 23),
+                  child: Row(
+                    children: [
+                      Icon(_modelIcon(model), size: 10, color: AppColors.textFaint),
+                      const SizedBox(width: 4),
+                      Flexible(child: Text(shortModelLabel(model), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: AppColors.textFaint))),
+                      if (widget.running) ...[
+                        const SizedBox(width: 6),
+                        const Text('running…', style: TextStyle(fontSize: 10, color: AppColors.accent)),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+
+  IconData _modelIcon(String m) {
+    if (m.contains('cloud') || m.contains('qwen') || m.contains('gemma')) return LucideIcons.cloud;
+    return LucideIcons.sparkles;
+  }
+}
+
+/// A compact human label for a model id shown under each session.
+String shortModelLabel(String m) {
+  final lower = m.toLowerCase();
+  if (lower.contains('qwen')) return 'Qwen3 Coder';
+  if (lower.contains('gemma')) return 'Gemma (cloud)';
+  if (lower.contains('gemini')) {
+    return m
+        .replaceAll('-preview', '')
+        .replaceAll('models/', '')
+        .replaceAll('gemini-', 'Gemini ')
+        .replaceAll('-', ' ');
+  }
+  return m;
 }
 
 class _EmptySessions extends StatelessWidget {

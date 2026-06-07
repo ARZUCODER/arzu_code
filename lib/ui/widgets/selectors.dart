@@ -7,8 +7,11 @@ import '../../providers/config_provider.dart';
 import '../../theme/app_theme.dart';
 
 String prettyModel(String id) {
+  if (isClaudeCliModel(id)) {
+    return 'Claude CLI · ${claudeCliOllamaModel(id).split(':').first}';
+  }
   return switch (id) {
-    'gemini-3.1-pro-preview' => 'Gemini 3.1 Pro (Google)',
+    'gemini-3.1-pro-preview' => 'Gemini 3.1 Pro (Vertex)',
     'gemini-3.5-flash' => 'Gemini 3.5 Flash (Google)',
     'gemini-3.1-flash-lite' => 'Gemini 3.1 Flash Lite (Google)',
     'gemini-2.5-pro' => 'Gemini 2.5 Pro (Vertex)',
@@ -168,9 +171,13 @@ class ModelSelector extends ConsumerWidget {
           notifier.setModel(v);
           notifier.setTestMode(false);
           notifier.setUseLocalModel(false);
-        } else if (kAvailableLocalModels.contains(v)) {
+        } else if (kArzuCloudModels.contains(v)) {
           notifier.setLocalModel(v);
           notifier.setUseLocalModel(true);
+        } else if (kClaudeCliModels.contains(v)) {
+          notifier.setModel(v);
+          notifier.setTestMode(false);
+          notifier.setUseLocalModel(false);
         }
       },
       itemBuilder: (_) => [
@@ -189,7 +196,7 @@ class ModelSelector extends ConsumerWidget {
                   color: (!config.useLocalModel && !config.testMode && config.model == m) ? AppColors.accent : AppColors.textFaint,
                 ),
                 const SizedBox(width: 8),
-                Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13)),
+                Expanded(child: Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13), overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),
@@ -209,7 +216,7 @@ class ModelSelector extends ConsumerWidget {
                   color: (!config.useLocalModel && !config.testMode && config.model == m) ? AppColors.accent : AppColors.textFaint,
                 ),
                 const SizedBox(width: 8),
-                Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13)),
+                Expanded(child: Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13), overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),
@@ -250,16 +257,18 @@ class ModelSelector extends ConsumerWidget {
                 color: config.testMode && !config.useLocalModel ? AppColors.green : AppColors.textFaint,
               ),
               const SizedBox(width: 8),
-              Text('Fast Cloud Mode (${prettyModel(config.testModel)})', style: const TextStyle(color: AppColors.textDim, fontSize: 12.5)),
+              Expanded(
+                child: Text('Fast Cloud Mode (${prettyModel(config.testModel)})', style: const TextStyle(color: AppColors.textDim, fontSize: 12.5), overflow: TextOverflow.ellipsis),
+              ),
             ],
           ),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
           enabled: false,
-          child: Text('💻 LOCAL MODELS (Ollama)', style: TextStyle(fontSize: 11, color: AppColors.textFaint, fontWeight: FontWeight.bold)),
+          child: Text('☁️ ARZU CLOUD (Gemma · backend)', style: TextStyle(fontSize: 11, color: AppColors.textFaint, fontWeight: FontWeight.bold)),
         ),
-        for (final m in kAvailableLocalModels)
+        for (final m in kArzuCloudModels)
           PopupMenuItem(
             value: m,
             child: Row(
@@ -270,7 +279,27 @@ class ModelSelector extends ConsumerWidget {
                   color: (config.useLocalModel && config.localModel == m) ? AppColors.purple : AppColors.textFaint,
                 ),
                 const SizedBox(width: 8),
-                Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13)),
+                Expanded(child: Text(prettyModel(m), style: const TextStyle(color: AppColors.text, fontSize: 13), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          enabled: false,
+          child: Text('🤖 CLAUDE CLI (real Claude Code · Ollama)', style: TextStyle(fontSize: 11, color: AppColors.textFaint, fontWeight: FontWeight.bold)),
+        ),
+        for (final m in kClaudeCliModels)
+          PopupMenuItem(
+            value: m,
+            child: Row(
+              children: [
+                Icon(
+                  (!config.useLocalModel && !config.testMode && config.model == m) ? LucideIcons.check : LucideIcons.bot,
+                  size: 15,
+                  color: (!config.useLocalModel && !config.testMode && config.model == m) ? AppColors.accent : AppColors.textFaint,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Claude CLI · ${claudeCliOllamaModel(m).split(':').first}', style: const TextStyle(color: AppColors.text, fontSize: 13), overflow: TextOverflow.ellipsis)),
               ],
             ),
           ),

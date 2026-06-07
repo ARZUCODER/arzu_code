@@ -34,6 +34,29 @@ class ManagedProcess {
   }
 }
 
+/// Turns a raw process exit code into a human-readable reason. Negative codes on
+/// POSIX are `-signal` (e.g. -9 = SIGKILL = the process was force-stopped).
+String exitReason(int code) {
+  if (code == 0) return 'success (exit 0)';
+  if (code > 0) return 'error (exit code $code)';
+  switch (-code) {
+    case 9:
+      return 'stopped/killed (SIGKILL -9 — you or the system terminated it; also OOM)';
+    case 15:
+      return 'terminated (SIGTERM -15)';
+    case 2:
+      return 'interrupted (SIGINT -2)';
+    case 1:
+      return 'hang-up (SIGHUP -1)';
+    case 11:
+      return 'crashed: segmentation fault (SIGSEGV -11)';
+    case 6:
+      return 'crashed: abort (SIGABRT -6)';
+    default:
+      return 'killed by signal ${-code}';
+  }
+}
+
 /// Global registry of background processes. Lives for the whole app session so
 /// the bottom terminal panel and the agent tools share the same state.
 class ProcessManager {
@@ -91,7 +114,7 @@ class ProcessManager {
     process.stderr.listen((d) => append(String.fromCharCodes(d)));
     process.exitCode.then((code) {
       mp.exitCode = code;
-      mp.output.write('\n[process exited with code $code]\n');
+      mp.output.write('\n[process exited: ${exitReason(code)}]\n');
       _bump();
     });
 

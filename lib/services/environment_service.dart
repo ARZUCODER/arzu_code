@@ -47,6 +47,36 @@ class EnvironmentService {
       }
     }
 
+    // Flutter/Dart are often installed OUTSIDE PATH (e.g. ~/Documents/flutter/bin).
+    // Probe known locations so the agent never resorts to `find /` (slow, dumps
+    // thousands of lines, and triggers macOS Music/iCloud privacy prompts).
+    final h = Platform.environment['HOME'] ?? '';
+    final fallbacks = <String, List<String>>{
+      'flutter': [
+        '$h/Documents/flutter/bin/flutter',
+        '$h/flutter/bin/flutter',
+        '$h/development/flutter/bin/flutter',
+        '$h/fvm/default/bin/flutter',
+        '/opt/homebrew/bin/flutter',
+        '/usr/local/bin/flutter',
+      ],
+      'dart': [
+        '$h/Documents/flutter/bin/dart',
+        '$h/flutter/bin/dart',
+        '/opt/homebrew/bin/dart',
+        '/usr/local/bin/dart',
+      ],
+    };
+    fallbacks.forEach((tool, paths) {
+      if (found.containsKey(tool)) return;
+      for (final pth in paths) {
+        if (File(pth).existsSync()) {
+          found[tool] = pth;
+          break;
+        }
+      }
+    });
+
     String? osVersion;
     try {
       final res = await Process.run('sw_vers', ['-productVersion'])

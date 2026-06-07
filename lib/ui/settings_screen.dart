@@ -111,6 +111,46 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
               ),
+              _SectionTitle(icon: LucideIcons.cloud, title: 'Arzu Cloud (Gemma backend)', subtitle: 'Server-hosted model via the ilm_ai gateway. No local Ollama needed.'),
+              _Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: TextEditingController(text: config.arzuCloudKey)..selection = TextSelection.fromPosition(TextPosition(offset: config.arzuCloudKey.length)),
+                      obscureText: true,
+                      style: const TextStyle(color: AppColors.text, fontSize: 13.5),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Arzu Cloud key (X-Arzu-Key)',
+                        labelStyle: TextStyle(color: AppColors.textFaint),
+                        hintText: 'Paste the ARZU_AI_KEY from the backend .env',
+                        hintStyle: TextStyle(color: AppColors.textFaint),
+                        border: OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent)),
+                      ),
+                      onChanged: (v) => notifier.setArzuCloudKey(v),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: TextEditingController(text: config.arzuCloudUrl)..selection = TextSelection.fromPosition(TextPosition(offset: config.arzuCloudUrl.length)),
+                      style: const TextStyle(color: AppColors.text, fontSize: 13.5),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Gateway base URL',
+                        labelStyle: TextStyle(color: AppColors.textFaint),
+                        hintText: 'https://core.arzucoder.uz',
+                        hintStyle: TextStyle(color: AppColors.textFaint),
+                        border: OutlineInputBorder(),
+                        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.accent)),
+                      ),
+                      onChanged: (v) => notifier.setArzuCloudUrl(v),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Pick a "Arzu Cloud" model from the engine menu to use it.', style: TextStyle(fontSize: 12, color: AppColors.textFaint)),
+                  ],
+                ),
+              ),
               _SectionTitle(icon: LucideIcons.sparkles, title: 'Models', subtitle: 'Default model and the model used in test mode.'),
               _Card(
                 child: Column(
